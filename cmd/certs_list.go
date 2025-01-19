@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// issueCertCmd represents the issue command
+// listCertsCmd represents the list certificates command
 var listCertsCmd = &cobra.Command{
 	Use:   "list",
 	Short: "list certificates",

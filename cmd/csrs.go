@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// issueCertCmd represents the issue command
+// csrsCmd represents the CSRs command
 var csrsCmd = &cobra.Command{
 	Use:   "csrs",
 	Short: "certificate signing request",

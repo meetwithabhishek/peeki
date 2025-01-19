@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -12,18 +11,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// issueCertCmd represents the issue command
+// createCSRCmd represents the create CSR command
 var createCSRCmd = &cobra.Command{
 	Use:   "create",
 	Short: "create CSR",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Step 1: Generate a private key
-		privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			return merry.Prepend(err, "failed to generate private key")
 		}
 
-		// Step 2: Create a CSR template
 		subject := pkix.Name{
 			CommonName:         commonName,
 			Country:            []string{"IN"},
@@ -40,26 +37,23 @@ var createCSRCmd = &cobra.Command{
 			},
 		}
 
-		// Step 3: Generate the CSR
 		csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csrTemplate, privateKey)
 		if err != nil {
 			return merry.Prepend(err, "failed to generate CSR")
 		}
 
-		// Step 4: Encode the CSR in PEM format
 		csrPEM := pem.EncodeToMemory(&pem.Block{
 			Type:  "CERTIFICATE REQUEST",
 			Bytes: csrBytes,
 		})
 
-		// Encode the private key in PEM format
-		privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
+		privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 		if err != nil {
 			return merry.Prepend(err, "failed to encode private key")
 		}
 
 		privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-			Type:  "EC PRIVATE KEY",
+			Type:  "PRIVATE KEY",
 			Bytes: privateKeyBytes,
 		})
 

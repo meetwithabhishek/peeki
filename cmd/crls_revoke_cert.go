@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// issueCertCmd represents the issue command
+// revokeCertCmd represents the revoke certificate command
 var revokeCertCmd = &cobra.Command{
 	Use:   "revoke-cert",
 	Short: "revoke a certificate",
@@ -42,15 +42,6 @@ var serialNumber string
 
 func init() {
 	crlCmd.AddCommand(revokeCertCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// issueCertCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
 	revokeCertCmd.Flags().StringVarP(&caName, "ca-name", "n", "", "CA Name")
 	revokeCertCmd.Flags().StringVarP(&serialNumber, "serial-number", "s", "", "Serial Number of Certificate")
 }

@@ -16,17 +16,11 @@ import (
 	"github.com/meetwithabhishek/peeki/internal"
 	"github.com/spf13/cobra"
 	"math/big"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"sync"
 	"time"
 )
-
-func getCAsPath(elem ...string) string {
-	return internal.GetPlayPath(append([]string{internal.CADir}, elem...)...)
-}
 
 func getCRLsPath(elem ...string) string {
 	return internal.GetPlayPath(append([]string{internal.CRLDir}, elem...)...)
@@ -43,73 +37,16 @@ var casCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(casCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// casCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
 }
 
 var testServerURL string
 var testServerPaths map[string]http.HandlerFunc
 var testServerLock sync.Mutex
 
-func hostPath(path string, handlerFunc http.HandlerFunc) error {
-	testServerLock.Lock()
-	defer testServerLock.Unlock()
-
-	if testServerURL == "" {
-		testServerPaths = make(map[string]http.HandlerFunc)
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			testServerLock.Lock()
-			defer testServerLock.Unlock()
-
-			hf, found := testServerPaths[r.URL.Path]
-			if !found {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			hf.ServeHTTP(w, r)
-		}))
-
-		testServerURL = server.URL
-	}
-
-	if _, found := testServerPaths[path]; found {
-		return merry.New("path already hosted")
-	}
-
-	testServerPaths[path] = handlerFunc
-	return nil
-}
-
 func removeHostedPath(path string) {
 	testServerLock.Lock()
 	defer testServerLock.Unlock()
 	delete(testServerPaths, path)
-}
-
-func formURL(path string) string {
-	return testServerURL + path
-}
-
-func parseCRL(crlBytes []byte) (*x509.RevocationList, error) {
-	derBytes := crlBytes
-	block, _ := pem.Decode(crlBytes)
-	if block != nil {
-		derBytes = block.Bytes
-	}
-
-	revocationList, err := x509.ParseRevocationList(derBytes)
-	if err != nil {
-		return revocationList, merry.Wrap(err)
-	}
-	return revocationList, nil
 }
 
 func parseRSAKey(keyPem string) (*rsa.PrivateKey, error) {
@@ -128,16 +65,16 @@ func parseRSAKey(keyPem string) (*rsa.PrivateKey, error) {
 	return privKey, nil
 }
 
-// MustParseCertificateString certificate to x509.Certificate format
-func MustParseCertificateString(pemData string) (*x509.Certificate, error) {
+// parseCertificateString certificate to x509.Certificate format
+func parseCertificateString(pemData string) (*x509.Certificate, error) {
 	block, _ := pem.Decode([]byte(pemData))
 	if block == nil {
-		return nil, merry.New("Invalid PEM data.")
+		return nil, merry.New("Invalid PEM data")
 	} else if block.Type != internal.CertificateType {
-		return nil, merry.New("Invalid PEM type.")
+		return nil, merry.New("Invalid PEM type")
 	}
 
-	cert, err := x509.ParseCertificate((block.Bytes))
+	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +162,7 @@ func createCRLInternal(caCert string, caKey string, revokedCertList []x509.Revoc
 	var signAlgo x509.SignatureAlgorithm
 	var template *x509.RevocationList
 
-	parsedCert, err := MustParseCertificateString(caCert)
+	parsedCert, err := parseCertificateString(caCert)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +241,7 @@ func createCA() (c createCAResp, err error) {
 	}
 
 	// create our private and public key
-	caPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	caPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return c, err
 	}
@@ -335,157 +272,4 @@ func createCA() (c createCAResp, err error) {
 	}
 
 	return createCAResp{CertPem: caPEM.String(), KeyPem: caPrivKeyPEM.String()}, nil
-}
-
-type IssueCertReq struct {
-	caName     string
-	caCert     string
-	caKey      string
-	commonName string
-}
-
-type IssueCertResp struct {
-	Cert         string
-	Key          string
-	SerialNumber string
-}
-
-func issueCertStandalone(params IssueCertReq) (r *IssueCertResp, err error) {
-	crlurl, err := getCRLURL(params.caName)
-	if err != nil {
-		return r, err
-	}
-
-	commonName := params.commonName
-	if commonName == "" {
-		commonName = gofakeit.Noun()
-	}
-
-	cert := &x509.Certificate{
-		SerialNumber: big.NewInt(gofakeit.Int64()),
-		Subject: pkix.Name{
-			CommonName:    commonName,
-			Organization:  []string{gofakeit.Company()},
-			Country:       []string{"US"},
-			Province:      []string{""},
-			Locality:      []string{gofakeit.Address().City},
-			StreetAddress: []string{gofakeit.Address().Street},
-			PostalCode:    []string{gofakeit.Address().Zip},
-		},
-		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		SubjectKeyId:          []byte{1, 2, 3, 4, 6},
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		CRLDistributionPoints: []string{crlurl},
-	}
-
-	certPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return r, err
-	}
-
-	ca, err := MustParseCertificateString(params.caCert)
-	if err != nil {
-		return r, err
-	}
-
-	caPrivKey, err := parseRSAKey(params.caKey)
-	if err != nil {
-		return r, err
-	}
-
-	certBytes, err := x509.CreateCertificate(rand.Reader, cert, ca, &certPrivKey.PublicKey, caPrivKey)
-	if err != nil {
-		return r, err
-	}
-
-	certPEM := new(bytes.Buffer)
-	err = pem.Encode(certPEM, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certBytes,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	certPrivKeyPEM := new(bytes.Buffer)
-	err = pem.Encode(certPrivKeyPEM, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(certPrivKey),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &IssueCertResp{Cert: certPEM.String(), Key: certPrivKeyPEM.String(), SerialNumber: cert.SerialNumber.String()}, nil
-}
-
-func getCRLURL(caName string) (string, error) {
-	joinPath, err := url.JoinPath("http://"+internal.GlobalConfig.SocketAddress, "crls", caName+".crl")
-	if err != nil {
-		return "", err
-	}
-	return joinPath, nil
-}
-
-func (c *CASetup) issueCert() (r IssueCertResp, err error) {
-	crlurl, err := getCRLURL(c.CAName)
-	if err != nil {
-		return IssueCertResp{}, err
-	}
-	cert := &x509.Certificate{
-		SerialNumber: big.NewInt(gofakeit.Int64()),
-		Subject: pkix.Name{
-			CommonName:    gofakeit.Noun(),
-			Organization:  []string{gofakeit.Company()},
-			Country:       []string{"US"},
-			Province:      []string{""},
-			Locality:      []string{gofakeit.Address().City},
-			StreetAddress: []string{gofakeit.Address().Street},
-			PostalCode:    []string{gofakeit.Address().Zip},
-		},
-		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		SubjectKeyId:          []byte{1, 2, 3, 4, 6},
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		CRLDistributionPoints: []string{crlurl},
-	}
-
-	certPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return r, err
-	}
-
-	ca, err := MustParseCertificateString(c.CACert)
-	if err != nil {
-		return r, err
-	}
-
-	caPrivKey, err := parseRSAKey(c.CAKey)
-	if err != nil {
-		return r, err
-	}
-
-	certBytes, err := x509.CreateCertificate(rand.Reader, cert, ca, &certPrivKey.PublicKey, caPrivKey)
-	if err != nil {
-		return r, err
-	}
-
-	certPEM := new(bytes.Buffer)
-	pem.Encode(certPEM, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certBytes,
-	})
-
-	certPrivKeyPEM := new(bytes.Buffer)
-	pem.Encode(certPrivKeyPEM, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(certPrivKey),
-	})
-
-	return IssueCertResp{Cert: certPEM.String(), Key: certPrivKeyPEM.String()}, nil
 }

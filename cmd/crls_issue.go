@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// issueCertCmd represents the issue command
+// issueCRLCmd represents the issue CRL command
 var issueCRLCmd = &cobra.Command{
 	Use:   "issue",
 	Short: "issue a crl",

@@ -12,6 +12,5 @@ const (
 )
 
 const (
-	CADir  = "cas"
 	CRLDir = "crls"
 )
